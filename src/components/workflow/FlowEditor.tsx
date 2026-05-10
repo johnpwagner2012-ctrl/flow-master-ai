@@ -35,7 +35,7 @@ function defaultConfig(kind: NodeKind): Record<string, unknown> {
   return out;
 }
 
-function Canvas({ workflowId }: { workflowId: string }) {
+function Canvas({ workflowId, nodeStatuses }: { workflowId: string; nodeStatuses?: Record<string, WorkflowNodeData["status"]> }) {
   const [nodes, setNodes] = useState<Node<WorkflowNodeData>[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [viewport, setViewport] = useState<Viewport | null>(null);
@@ -178,6 +178,11 @@ function Canvas({ workflowId }: { workflowId: string }) {
   const nodeTypes = useMemo(() => ({ workflow: WorkflowNode }), []);
   const selected = nodes.find((n) => n.id === selectedId) ?? null;
 
+  const renderedNodes = useMemo(() => {
+    if (!nodeStatuses) return nodes;
+    return nodes.map((n) => ({ ...n, data: { ...n.data, status: nodeStatuses[n.id] } }));
+  }, [nodes, nodeStatuses]);
+
   return (
     <div className="flex h-full gap-3 p-3">
       <NodePalette />
@@ -187,7 +192,7 @@ function Canvas({ workflowId }: { workflowId: string }) {
         ) : (
           <>
             <ReactFlow
-              nodes={nodes}
+              nodes={renderedNodes}
               edges={edges}
               defaultViewport={viewport ?? { x: 0, y: 0, zoom: 1 }}
               onNodesChange={onNodesChange}
