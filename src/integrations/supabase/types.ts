@@ -14,6 +14,104 @@ export type Database = {
   }
   public: {
     Tables: {
+      execution_logs: {
+        Row: {
+          created_at: string
+          id: string
+          level: string
+          message: string
+          node_execution_id: string
+          user_id: string
+          workflow_run_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          level?: string
+          message: string
+          node_execution_id: string
+          user_id: string
+          workflow_run_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          level?: string
+          message?: string
+          node_execution_id?: string
+          user_id?: string
+          workflow_run_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "execution_logs_node_execution_id_fkey"
+            columns: ["node_execution_id"]
+            isOneToOne: false
+            referencedRelation: "node_executions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "execution_logs_workflow_run_id_fkey"
+            columns: ["workflow_run_id"]
+            isOneToOne: false
+            referencedRelation: "workflow_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      node_executions: {
+        Row: {
+          created_at: string
+          error_message: string | null
+          finished_at: string | null
+          id: string
+          input_data: Json | null
+          node_key: string
+          node_type: string
+          output_data: Json | null
+          started_at: string | null
+          status: string
+          user_id: string
+          workflow_run_id: string
+        }
+        Insert: {
+          created_at?: string
+          error_message?: string | null
+          finished_at?: string | null
+          id?: string
+          input_data?: Json | null
+          node_key: string
+          node_type: string
+          output_data?: Json | null
+          started_at?: string | null
+          status?: string
+          user_id: string
+          workflow_run_id: string
+        }
+        Update: {
+          created_at?: string
+          error_message?: string | null
+          finished_at?: string | null
+          id?: string
+          input_data?: Json | null
+          node_key?: string
+          node_type?: string
+          output_data?: Json | null
+          started_at?: string | null
+          status?: string
+          user_id?: string
+          workflow_run_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "node_executions_workflow_run_id_fkey"
+            columns: ["workflow_run_id"]
+            isOneToOne: false
+            referencedRelation: "workflow_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -134,6 +232,45 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      workflow_runs: {
+        Row: {
+          created_at: string
+          error_message: string | null
+          finished_at: string | null
+          id: string
+          output_data: Json | null
+          started_at: string | null
+          status: string
+          trigger_data: Json
+          user_id: string
+          workflow_id: string
+        }
+        Insert: {
+          created_at?: string
+          error_message?: string | null
+          finished_at?: string | null
+          id?: string
+          output_data?: Json | null
+          started_at?: string | null
+          status?: string
+          trigger_data?: Json
+          user_id: string
+          workflow_id: string
+        }
+        Update: {
+          created_at?: string
+          error_message?: string | null
+          finished_at?: string | null
+          id?: string
+          output_data?: Json | null
+          started_at?: string | null
+          status?: string
+          trigger_data?: Json
+          user_id?: string
+          workflow_id?: string
+        }
+        Relationships: []
       }
       workflows: {
         Row: {

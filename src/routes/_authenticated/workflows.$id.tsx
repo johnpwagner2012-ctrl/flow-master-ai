@@ -7,6 +7,8 @@ import { Switch } from "@/components/ui/switch";
 import { supabase } from "@/integrations/supabase/client";
 import { updateWorkflowMeta, type WorkflowRow } from "@/lib/workflow-api";
 import { FlowEditor } from "@/components/workflow/FlowEditor";
+import { ExecutionPanel } from "@/components/workflow/ExecutionPanel";
+import type { WorkflowNodeData } from "@/components/workflow/WorkflowNode";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/workflows/$id")({ component: WorkflowEditorPage });
@@ -17,6 +19,7 @@ function WorkflowEditorPage() {
   const [wf, setWf] = useState<WorkflowRow | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [nodeStatuses, setNodeStatuses] = useState<Record<string, WorkflowNodeData["status"]>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -65,8 +68,13 @@ function WorkflowEditorPage() {
           </div>
         </div>
       </header>
-      <div className="flex-1 overflow-hidden">
-        <FlowEditor workflowId={wf.id} />
+      <div className="flex flex-1 overflow-hidden">
+        <div className="flex-1 overflow-hidden">
+          <FlowEditor workflowId={wf.id} nodeStatuses={nodeStatuses} />
+        </div>
+        <div className="flex h-full py-3 pr-3">
+          <ExecutionPanel workflowId={wf.id} onStatusesChange={setNodeStatuses} />
+        </div>
       </div>
     </div>
   );
