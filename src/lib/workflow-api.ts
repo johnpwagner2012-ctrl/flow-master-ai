@@ -93,7 +93,12 @@ export async function syncCanvas(params: {
   const { workflowId } = params;
 
   // Upsert nodes
-  const nodeRows = params.nodes.map(n => ({ ...n, workflow_id: workflowId, user_id: user.id }));
+  const nodeRows = params.nodes.map(n => ({
+    ...n,
+    config: n.config as never,
+    workflow_id: workflowId,
+    user_id: user.id,
+  }));
   if (nodeRows.length > 0) {
     const { error } = await supabase
       .from("workflow_nodes")
