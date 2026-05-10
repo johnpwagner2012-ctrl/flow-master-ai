@@ -221,10 +221,10 @@ function Canvas({ workflowId }: { workflowId: string }) {
   );
 }
 
-export function FlowEditor({ workflowId }: { workflowId: string }) {
+export function FlowEditor({ workflowId, nodeStatuses }: { workflowId: string; nodeStatuses?: Record<string, WorkflowNodeData["status"]> }) {
   return (
     <ReactFlowProvider>
-      <Canvas workflowId={workflowId} />
+      <Canvas workflowId={workflowId} nodeStatuses={nodeStatuses} />
     </ReactFlowProvider>
   );
 }
