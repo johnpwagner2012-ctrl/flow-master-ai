@@ -101,12 +101,16 @@ export async function syncCanvas(params: {
     if (error) throw error;
   }
   // Delete removed nodes
-  const keepNodeKeys = params.nodes.map(n => n.node_key);
+  const keepNodeKeys = new Set(params.nodes.map(n => n.node_key));
   {
-    let q = supabase.from("workflow_nodes").delete().eq("workflow_id", workflowId);
-    if (keepNodeKeys.length) q = q.not("node_key", "in", `(${keepNodeKeys.map(k => `"${k.replace(/"/g, '\\"')}"`).join(",")})`);
-    const { error } = await q;
+    const { data: existing, error } = await supabase
+      .from("workflow_nodes").select("id,node_key").eq("workflow_id", workflowId);
     if (error) throw error;
+    const toDelete = (existing ?? []).filter(r => !keepNodeKeys.has(r.node_key)).map(r => r.id);
+    if (toDelete.length) {
+      const { error: delErr } = await supabase.from("workflow_nodes").delete().in("id", toDelete);
+      if (delErr) throw delErr;
+    }
   }
 
   // Upsert edges
@@ -117,12 +121,16 @@ export async function syncCanvas(params: {
       .upsert(edgeRows, { onConflict: "workflow_id,edge_key" });
     if (error) throw error;
   }
-  const keepEdgeKeys = params.edges.map(e => e.edge_key);
+  const keepEdgeKeys = new Set(params.edges.map(e => e.edge_key));
   {
-    let q = supabase.from("workflow_edges").delete().eq("workflow_id", workflowId);
-    if (keepEdgeKeys.length) q = q.not("edge_key", "in", `(${keepEdgeKeys.map(k => `"${k.replace(/"/g, '\\"')}"`).join(",")})`);
-    const { error } = await q;
+    const { data: existing, error } = await supabase
+      .from("workflow_edges").select("id,edge_key").eq("workflow_id", workflowId);
     if (error) throw error;
+    const toDelete = (existing ?? []).filter(r => !keepEdgeKeys.has(r.edge_key)).map(r => r.id);
+    if (toDelete.length) {
+      const { error: delErr } = await supabase.from("workflow_edges").delete().in("id", toDelete);
+      if (delErr) throw delErr;
+    }
   }
 
   await supabase.from("workflows").update({ updated_at: new Date().toISOString() }).eq("id", workflowId);
