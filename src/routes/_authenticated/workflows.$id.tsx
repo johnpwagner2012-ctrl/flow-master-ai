@@ -68,11 +68,13 @@ function WorkflowEditorPage() {
           </div>
         </div>
       </header>
-      <div className="flex flex-1 gap-3 overflow-hidden p-3">
+      <div className="flex flex-1 overflow-hidden">
         <div className="flex-1 overflow-hidden">
           <FlowEditor workflowId={wf.id} nodeStatuses={nodeStatuses} />
         </div>
-        <ExecutionPanel workflowId={wf.id} onStatusesChange={setNodeStatuses} />
+        <div className="py-3 pr-3">
+          <ExecutionPanel workflowId={wf.id} onStatusesChange={setNodeStatuses} />
+        </div>
       </div>
     </div>
   );
