@@ -14,7 +14,160 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          display_name: string | null
+          email: string | null
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          display_name?: string | null
+          email?: string | null
+          id: string
+          updated_at?: string
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          display_name?: string | null
+          email?: string | null
+          id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      workflow_edges: {
+        Row: {
+          created_at: string
+          edge_key: string
+          id: string
+          source_handle: string | null
+          source_key: string
+          target_handle: string | null
+          target_key: string
+          user_id: string
+          workflow_id: string
+        }
+        Insert: {
+          created_at?: string
+          edge_key: string
+          id?: string
+          source_handle?: string | null
+          source_key: string
+          target_handle?: string | null
+          target_key: string
+          user_id: string
+          workflow_id: string
+        }
+        Update: {
+          created_at?: string
+          edge_key?: string
+          id?: string
+          source_handle?: string | null
+          source_key?: string
+          target_handle?: string | null
+          target_key?: string
+          user_id?: string
+          workflow_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workflow_edges_workflow_id_fkey"
+            columns: ["workflow_id"]
+            isOneToOne: false
+            referencedRelation: "workflows"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      workflow_nodes: {
+        Row: {
+          config: Json
+          created_at: string
+          id: string
+          label: string | null
+          node_key: string
+          position_x: number
+          position_y: number
+          type: string
+          updated_at: string
+          user_id: string
+          workflow_id: string
+        }
+        Insert: {
+          config?: Json
+          created_at?: string
+          id?: string
+          label?: string | null
+          node_key: string
+          position_x?: number
+          position_y?: number
+          type: string
+          updated_at?: string
+          user_id: string
+          workflow_id: string
+        }
+        Update: {
+          config?: Json
+          created_at?: string
+          id?: string
+          label?: string | null
+          node_key?: string
+          position_x?: number
+          position_y?: number
+          type?: string
+          updated_at?: string
+          user_id?: string
+          workflow_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workflow_nodes_workflow_id_fkey"
+            columns: ["workflow_id"]
+            isOneToOne: false
+            referencedRelation: "workflows"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      workflows: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          is_active: boolean
+          name: string
+          updated_at: string
+          user_id: string
+          viewport: Json
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          updated_at?: string
+          user_id: string
+          viewport?: Json
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          updated_at?: string
+          user_id?: string
+          viewport?: Json
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
