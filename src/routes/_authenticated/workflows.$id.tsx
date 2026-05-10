@@ -72,7 +72,7 @@ function WorkflowEditorPage() {
         <div className="flex-1 overflow-hidden">
           <FlowEditor workflowId={wf.id} nodeStatuses={nodeStatuses} />
         </div>
-        <div className="py-3 pr-3">
+        <div className="flex h-full py-3 pr-3">
           <ExecutionPanel workflowId={wf.id} onStatusesChange={setNodeStatuses} />
         </div>
       </div>
