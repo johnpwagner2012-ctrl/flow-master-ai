@@ -18,6 +18,7 @@ import { Route as AuthenticatedDashboardRouteImport } from './routes/_authentica
 import { Route as AuthenticatedAssetsRouteImport } from './routes/_authenticated/assets'
 import { Route as AuthenticatedWorkflowsIndexRouteImport } from './routes/_authenticated/workflows.index'
 import { Route as AuthenticatedWorkflowsIdRouteImport } from './routes/_authenticated/workflows.$id'
+import { Route as ApiPublicHooksSchedulerTickRouteImport } from './routes/api/public/hooks/scheduler-tick'
 
 const SignupRoute = SignupRouteImport.update({
   id: '/signup',
@@ -65,6 +66,12 @@ const AuthenticatedWorkflowsIdRoute =
     path: '/workflows/$id',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const ApiPublicHooksSchedulerTickRoute =
+  ApiPublicHooksSchedulerTickRouteImport.update({
+    id: '/api/public/hooks/scheduler-tick',
+    path: '/api/public/hooks/scheduler-tick',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -75,6 +82,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AuthenticatedSettingsRoute
   '/workflows/$id': typeof AuthenticatedWorkflowsIdRoute
   '/workflows/': typeof AuthenticatedWorkflowsIndexRoute
+  '/api/public/hooks/scheduler-tick': typeof ApiPublicHooksSchedulerTickRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -85,6 +93,7 @@ export interface FileRoutesByTo {
   '/settings': typeof AuthenticatedSettingsRoute
   '/workflows/$id': typeof AuthenticatedWorkflowsIdRoute
   '/workflows': typeof AuthenticatedWorkflowsIndexRoute
+  '/api/public/hooks/scheduler-tick': typeof ApiPublicHooksSchedulerTickRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -97,6 +106,7 @@ export interface FileRoutesById {
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/workflows/$id': typeof AuthenticatedWorkflowsIdRoute
   '/_authenticated/workflows/': typeof AuthenticatedWorkflowsIndexRoute
+  '/api/public/hooks/scheduler-tick': typeof ApiPublicHooksSchedulerTickRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -109,6 +119,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/workflows/$id'
     | '/workflows/'
+    | '/api/public/hooks/scheduler-tick'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -119,6 +130,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/workflows/$id'
     | '/workflows'
+    | '/api/public/hooks/scheduler-tick'
   id:
     | '__root__'
     | '/'
@@ -130,6 +142,7 @@ export interface FileRouteTypes {
     | '/_authenticated/settings'
     | '/_authenticated/workflows/$id'
     | '/_authenticated/workflows/'
+    | '/api/public/hooks/scheduler-tick'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -137,6 +150,7 @@ export interface RootRouteChildren {
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
   LoginRoute: typeof LoginRoute
   SignupRoute: typeof SignupRoute
+  ApiPublicHooksSchedulerTickRoute: typeof ApiPublicHooksSchedulerTickRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -204,6 +218,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWorkflowsIdRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/api/public/hooks/scheduler-tick': {
+      id: '/api/public/hooks/scheduler-tick'
+      path: '/api/public/hooks/scheduler-tick'
+      fullPath: '/api/public/hooks/scheduler-tick'
+      preLoaderRoute: typeof ApiPublicHooksSchedulerTickRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -232,6 +253,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
   LoginRoute: LoginRoute,
   SignupRoute: SignupRoute,
+  ApiPublicHooksSchedulerTickRoute: ApiPublicHooksSchedulerTickRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
