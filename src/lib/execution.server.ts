@@ -148,6 +148,51 @@ async function executeNode(
     case "webhook_trigger": {
       return { triggered_at: new Date().toISOString(), payload: inputs };
     }
+    case "save_asset": {
+      const assetType = String(cfg.asset_type ?? "script");
+      const sourceField = String(cfg.source ?? "text").trim();
+      const name = cfg.name ? String(cfg.name) : null;
+
+      // Find first upstream output and extract content
+      const upstreamKeys = Object.keys(inputs);
+      if (upstreamKeys.length === 0) throw new Error("Save Asset: no upstream node connected");
+      const upstream = inputs[upstreamKeys[0]] as Record<string, unknown> | string | null;
+
+      let content: string | null = null;
+      let fileUrl: string | null = null;
+      if (typeof upstream === "string") {
+        content = upstream;
+      } else if (upstream && typeof upstream === "object") {
+        const rec = upstream as Record<string, unknown>;
+        const candidate = sourceField && sourceField in rec ? rec[sourceField] : (rec.text ?? rec.body ?? rec.content ?? rec.url);
+        if (typeof candidate === "string") {
+          if (assetType !== "script" && /^https?:\/\//i.test(candidate)) fileUrl = candidate;
+          else content = candidate;
+        } else {
+          content = JSON.stringify(candidate ?? rec, null, 2);
+        }
+      }
+
+      const { data: assetRow, error: aErr } = await sb
+        .from("assets")
+        .insert({
+          user_id: userId,
+          workflow_run_id: runId,
+          node_execution_id: nodeExecId,
+          node_key: node.node_key,
+          type: assetType,
+          name,
+          content,
+          file_url: fileUrl,
+          metadata: { source_node: upstreamKeys[0], source_field: sourceField } as never,
+        })
+        .select("id")
+        .single();
+      if (aErr) throw new Error(`Save Asset failed: ${aErr.message}`);
+
+      await log(sb, { runId, nodeExecId, userId, level: "info", message: `Saved ${assetType} asset ${assetRow.id}` });
+      return { asset_id: assetRow.id, type: assetType, content, file_url: fileUrl };
+    }
     default: {
       // Scaffold for unimplemented nodes — pass through, no fake output
       await log(sb, {
