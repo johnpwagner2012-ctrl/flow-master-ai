@@ -1,4 +1,4 @@
-import { Webhook, Globe, GitBranch, Timer, Sparkles, Clock, Mic, Captions, Video, Youtube } from "lucide-react";
+import { Webhook, Globe, GitBranch, Timer, Sparkles, Clock, Mic, Captions, Video, Youtube, Save } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 export type NodeKind =
@@ -11,7 +11,8 @@ export type NodeKind =
   | "http_request"
   | "condition"
   | "delay"
-  | "youtube_upload";
+  | "youtube_upload"
+  | "save_asset";
 
 export type NodeField =
   | { key: string; label: string; type: "text" | "textarea" | "number" | "url"; placeholder?: string; default?: string | number }
@@ -102,6 +103,21 @@ export const NODE_REGISTRY: Record<NodeKind, NodeDef> = {
       { key: "description", label: "Description", type: "textarea" },
       { key: "privacy", label: "Privacy", type: "select",
         options: [{ label: "Public", value: "public" }, { label: "Unlisted", value: "unlisted" }, { label: "Private", value: "private" }], default: "private" },
+    ],
+  },
+  save_asset: {
+    kind: "save_asset", label: "Save Asset", category: "Integration", icon: Save, hue: 140,
+    description: "Persist the upstream node output as an asset in your library.",
+    fields: [
+      { key: "asset_type", label: "Asset type", type: "select",
+        options: [
+          { label: "Script (text)", value: "script" },
+          { label: "Audio", value: "audio" },
+          { label: "Video", value: "video" },
+          { label: "Image", value: "image" },
+        ], default: "script" },
+      { key: "name", label: "Name (optional)", type: "text", placeholder: "My generated script" },
+      { key: "source", label: "Source field", type: "text", placeholder: "text", default: "text" },
     ],
   },
 };
