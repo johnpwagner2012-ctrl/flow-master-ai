@@ -8,6 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { updateWorkflowMeta, type WorkflowRow } from "@/lib/workflow-api";
 import { FlowEditor } from "@/components/workflow/FlowEditor";
 import { ExecutionPanel } from "@/components/workflow/ExecutionPanel";
+import { SchedulePanel } from "@/components/workflow/SchedulePanel";
 import type { WorkflowNodeData } from "@/components/workflow/WorkflowNode";
 import { toast } from "sonner";
 
@@ -72,8 +73,11 @@ function WorkflowEditorPage() {
         <div className="flex-1 overflow-hidden">
           <FlowEditor workflowId={wf.id} nodeStatuses={nodeStatuses} />
         </div>
-        <div className="flex h-full py-3 pr-3">
-          <ExecutionPanel workflowId={wf.id} onStatusesChange={setNodeStatuses} />
+        <div className="flex h-full w-[360px] flex-col gap-3 py-3 pr-3">
+          <SchedulePanel workflowId={wf.id} />
+          <div className="min-h-0 flex-1">
+            <ExecutionPanel workflowId={wf.id} onStatusesChange={setNodeStatuses} />
+          </div>
         </div>
       </div>
     </div>
