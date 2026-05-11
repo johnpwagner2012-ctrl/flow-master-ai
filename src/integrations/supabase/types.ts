@@ -14,6 +14,51 @@ export type Database = {
   }
   public: {
     Tables: {
+      assets: {
+        Row: {
+          content: string | null
+          created_at: string
+          file_url: string | null
+          id: string
+          metadata: Json
+          name: string | null
+          node_execution_id: string | null
+          node_key: string | null
+          type: string
+          user_id: string
+          workflow_id: string | null
+          workflow_run_id: string | null
+        }
+        Insert: {
+          content?: string | null
+          created_at?: string
+          file_url?: string | null
+          id?: string
+          metadata?: Json
+          name?: string | null
+          node_execution_id?: string | null
+          node_key?: string | null
+          type?: string
+          user_id: string
+          workflow_id?: string | null
+          workflow_run_id?: string | null
+        }
+        Update: {
+          content?: string | null
+          created_at?: string
+          file_url?: string | null
+          id?: string
+          metadata?: Json
+          name?: string | null
+          node_execution_id?: string | null
+          node_key?: string | null
+          type?: string
+          user_id?: string
+          workflow_id?: string | null
+          workflow_run_id?: string | null
+        }
+        Relationships: []
+      }
       execution_logs: {
         Row: {
           created_at: string
