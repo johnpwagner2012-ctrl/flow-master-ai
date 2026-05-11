@@ -1,0 +1,2 @@
+revoke execute on function public.claim_due_schedules(int, int) from public, anon, authenticated;
+revoke execute on function public.mark_schedule_run(uuid, timestamptz, uuid) from public, anon, authenticated;
