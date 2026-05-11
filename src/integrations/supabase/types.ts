@@ -317,6 +317,51 @@ export type Database = {
         }
         Relationships: []
       }
+      workflow_schedules: {
+        Row: {
+          claimed_at: string | null
+          created_at: string
+          cron_expression: string
+          enabled: boolean
+          id: string
+          last_run_at: string | null
+          last_run_id: string | null
+          next_run_at: string | null
+          timezone: string
+          updated_at: string
+          user_id: string
+          workflow_id: string
+        }
+        Insert: {
+          claimed_at?: string | null
+          created_at?: string
+          cron_expression: string
+          enabled?: boolean
+          id?: string
+          last_run_at?: string | null
+          last_run_id?: string | null
+          next_run_at?: string | null
+          timezone?: string
+          updated_at?: string
+          user_id: string
+          workflow_id: string
+        }
+        Update: {
+          claimed_at?: string | null
+          created_at?: string
+          cron_expression?: string
+          enabled?: boolean
+          id?: string
+          last_run_at?: string | null
+          last_run_id?: string | null
+          next_run_at?: string | null
+          timezone?: string
+          updated_at?: string
+          user_id?: string
+          workflow_id?: string
+        }
+        Relationships: []
+      }
       workflows: {
         Row: {
           created_at: string
@@ -355,7 +400,21 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      claim_due_schedules: {
+        Args: { _limit?: number; _lock_seconds?: number }
+        Returns: {
+          cron_expression: string
+          id: string
+          next_run_at: string
+          timezone: string
+          user_id: string
+          workflow_id: string
+        }[]
+      }
+      mark_schedule_run: {
+        Args: { _id: string; _next_run_at: string; _run_id: string }
+        Returns: undefined
+      }
     }
     Enums: {
       [_ in never]: never

@@ -126,7 +126,7 @@ export function ExecutionPanel({
   }, [logs]);
 
   return (
-    <div className="glass flex w-[360px] flex-col rounded-xl">
+    <div className="glass flex h-full w-full flex-col rounded-xl">
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div className="text-sm font-medium">Execution</div>
         <Button size="sm" onClick={onRun} disabled={starting || !!isRunning}>
