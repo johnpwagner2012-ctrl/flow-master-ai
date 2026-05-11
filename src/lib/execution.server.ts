@@ -96,6 +96,7 @@ async function executeNode(
   nodeExecId: string,
   node: NodeRow,
   inputs: Record<string, unknown>,
+  workflowId: string,
 ): Promise<unknown> {
   const cfg = node.config ?? {};
   switch (node.type) {
@@ -179,6 +180,7 @@ async function executeNode(
           user_id: userId,
           workflow_run_id: runId,
           node_execution_id: nodeExecId,
+          workflow_id: workflowId,
           node_key: node.node_key,
           type: assetType,
           name,
@@ -273,7 +275,7 @@ export async function runWorkflowEngine(sb: SB, userId: string, workflowId: stri
     const nodeExecId = neRow.id;
 
     try {
-      const out = await executeNode(sb, userId, runId, nodeExecId, node, ins);
+      const out = await executeNode(sb, userId, runId, nodeExecId, node, ins, workflowId);
       outputs[node.node_key] = out;
       await sb
         .from("node_executions")
