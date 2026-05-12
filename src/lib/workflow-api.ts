@@ -10,6 +10,9 @@ export type WorkflowRow = {
   viewport: { x: number; y: number; zoom: number };
   created_at: string;
   updated_at: string;
+  current_version?: number;
+  is_published?: boolean;
+  published_at?: string | null;
 };
 
 export type NodeRow = {
@@ -44,7 +47,7 @@ export async function listWorkflows() {
     .select("*")
     .order("updated_at", { ascending: false });
   if (error) throw error;
-  return data as WorkflowRow[];
+  return data as unknown as WorkflowRow[];
 }
 
 export async function createWorkflow(name = "Untitled workflow") {
@@ -56,7 +59,7 @@ export async function createWorkflow(name = "Untitled workflow") {
     .select("*")
     .single();
   if (error) throw error;
-  return data as WorkflowRow;
+  return data as unknown as WorkflowRow;
 }
 
 export async function getWorkflow(id: string) {
@@ -68,7 +71,7 @@ export async function getWorkflow(id: string) {
   if (wfErr) throw wfErr;
   if (nErr) throw nErr;
   if (eErr) throw eErr;
-  return { workflow: wf as WorkflowRow, nodes: (nodes ?? []) as NodeRow[], edges: (edges ?? []) as EdgeRow[] };
+  return { workflow: wf as unknown as WorkflowRow, nodes: (nodes ?? []) as NodeRow[], edges: (edges ?? []) as EdgeRow[] };
 }
 
 export async function deleteWorkflow(id: string) {
