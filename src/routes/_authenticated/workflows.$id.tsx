@@ -29,7 +29,7 @@ function WorkflowEditorPage() {
       if (cancelled) return;
       if (error) { toast.error(error.message); navigate({ to: "/workflows" }); return; }
       if (!data) { toast.error("Workflow not found"); navigate({ to: "/workflows" }); return; }
-      setWf(data as WorkflowRow);
+      setWf(data as unknown as WorkflowRow);
       setLoading(false);
     })();
     return () => { cancelled = true; };
