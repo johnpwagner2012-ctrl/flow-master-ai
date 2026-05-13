@@ -633,12 +633,7 @@ export type Database = {
     }
     Functions: {
       claim_client_job: {
-        Args: {
-          _lease_seconds?: number
-          _types?: string[]
-          _user_id: string
-          _worker_id: string
-        }
+        Args: { _lease_seconds?: number; _types?: string[]; _worker_id: string }
         Returns: {
           attempts: number
           id: string
