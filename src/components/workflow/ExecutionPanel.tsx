@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { Play, Loader2, History, CheckCircle2, XCircle, Clock, ChevronDown, ChevronRight } from "lucide-react";
+import { Play, Loader2, History, CheckCircle2, XCircle, Clock, ChevronDown, ChevronRight, Square, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { runWorkflow } from "@/lib/execution.functions";
+import { cancelWorkflowRun, replayWorkflowRun } from "@/lib/client-jobs.functions";
 import {
   listRuns,
   getNodeExecutions,
@@ -33,6 +34,8 @@ export function ExecutionPanel({
   onStatusesChange: (s: StatusMap) => void;
 }) {
   const runFn = useServerFn(runWorkflow);
+  const cancelFn = useServerFn(cancelWorkflowRun);
+  const replayFn = useServerFn(replayWorkflowRun);
   const [starting, setStarting] = useState(false);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [activeRun, setActiveRun] = useState<WorkflowRunRow | null>(null);
@@ -129,10 +132,31 @@ export function ExecutionPanel({
     <div className="glass flex h-full w-full flex-col rounded-xl">
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div className="text-sm font-medium">Execution</div>
-        <Button size="sm" onClick={onRun} disabled={starting || !!isRunning}>
-          {starting || isRunning ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Play className="mr-2 h-3.5 w-3.5" />}
-          Run
-        </Button>
+        <div className="flex items-center gap-2">
+          {activeRunId && isRunning && (
+            <Button size="sm" variant="outline" onClick={async () => {
+              try { await cancelFn({ data: { runId: activeRunId } }); toast.success("Cancellation requested"); }
+              catch (e) { toast.error((e as Error).message); }
+            }}>
+              <Square className="mr-2 h-3.5 w-3.5" /> Cancel
+            </Button>
+          )}
+          {activeRunId && !isRunning && (
+            <Button size="sm" variant="outline" onClick={async () => {
+              try {
+                const r = await replayFn({ data: { runId: activeRunId } });
+                setActiveRunId(r.runId); setNodeExecs([]); setLogs([]); setActiveRun(null);
+                toast.success("Replay started");
+              } catch (e) { toast.error((e as Error).message); }
+            }}>
+              <RotateCcw className="mr-2 h-3.5 w-3.5" /> Replay
+            </Button>
+          )}
+          <Button size="sm" onClick={onRun} disabled={starting || !!isRunning}>
+            {starting || isRunning ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Play className="mr-2 h-3.5 w-3.5" />}
+            Run
+          </Button>
+        </div>
       </div>
 
       {activeRunId && (
