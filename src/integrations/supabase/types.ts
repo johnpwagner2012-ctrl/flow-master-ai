@@ -192,34 +192,61 @@ export type Database = {
       }
       pending_client_jobs: {
         Row: {
+          attempts: number
+          claimed_at: string | null
+          claimed_by: string | null
+          completed_at: string | null
           created_at: string
+          heartbeat_at: string | null
           id: string
+          last_error: string | null
+          lease_until: string | null
+          max_attempts: number
           node_execution_id: string
           node_key: string
           node_type: string
           payload: Json
+          status: string
           user_id: string
           workflow_id: string
           workflow_run_id: string
         }
         Insert: {
+          attempts?: number
+          claimed_at?: string | null
+          claimed_by?: string | null
+          completed_at?: string | null
           created_at?: string
+          heartbeat_at?: string | null
           id?: string
+          last_error?: string | null
+          lease_until?: string | null
+          max_attempts?: number
           node_execution_id: string
           node_key: string
           node_type: string
           payload: Json
+          status?: string
           user_id: string
           workflow_id: string
           workflow_run_id: string
         }
         Update: {
+          attempts?: number
+          claimed_at?: string | null
+          claimed_by?: string | null
+          completed_at?: string | null
           created_at?: string
+          heartbeat_at?: string | null
           id?: string
+          last_error?: string | null
+          lease_until?: string | null
+          max_attempts?: number
           node_execution_id?: string
           node_key?: string
           node_type?: string
           payload?: Json
+          status?: string
           user_id?: string
           workflow_id?: string
           workflow_run_id?: string
@@ -605,6 +632,25 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      claim_client_job: {
+        Args: {
+          _lease_seconds?: number
+          _types?: string[]
+          _user_id: string
+          _worker_id: string
+        }
+        Returns: {
+          attempts: number
+          id: string
+          max_attempts: number
+          node_execution_id: string
+          node_key: string
+          node_type: string
+          payload: Json
+          workflow_id: string
+          workflow_run_id: string
+        }[]
+      }
       claim_due_schedules: {
         Args: { _limit?: number; _lock_seconds?: number }
         Returns: {
@@ -620,6 +666,7 @@ export type Database = {
         Args: { _id: string; _next_run_at: string; _run_id: string }
         Returns: undefined
       }
+      release_stale_client_jobs: { Args: never; Returns: number }
     }
     Enums: {
       [_ in never]: never
