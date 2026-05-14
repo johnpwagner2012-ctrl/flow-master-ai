@@ -26,6 +26,8 @@ export type NodeExecutionRow = {
   started_at: string | null;
   finished_at: string | null;
   created_at: string;
+  progress_pct?: number | null;
+  progress_message?: string | null;
 };
 
 export type ExecutionLogRow = {
