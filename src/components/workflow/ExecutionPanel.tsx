@@ -195,6 +195,17 @@ export function ExecutionPanel({
                   <span className="font-mono truncate flex-1">{ne.node_type}</span>
                   <span className="text-muted-foreground">{ne.node_key.slice(0, 8)}</span>
                 </button>
+                {ne.status === "running" && (ne.progress_pct ?? 0) > 0 && (
+                  <div className="px-3 pb-2">
+                    <div className="h-1 w-full overflow-hidden rounded-full bg-muted">
+                      <div className="h-full bg-primary transition-all" style={{ width: `${ne.progress_pct}%` }} />
+                    </div>
+                    <div className="mt-1 flex justify-between text-[10px] text-muted-foreground">
+                      <span>{ne.progress_message ?? "Working…"}</span>
+                      <span>{ne.progress_pct}%</span>
+                    </div>
+                  </div>
+                )}
                 {isOpen && (
                   <div className="border-t border-border px-3 py-2 space-y-2 text-[11px]">
                     {nodeLogs.length > 0 && (
