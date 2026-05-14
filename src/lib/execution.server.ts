@@ -334,8 +334,8 @@ async function executeNode(
       if (images.length === 0) throw new Error("Timeline Builder: at least one upstream image is required");
 
       // Distribute scene durations: align with audio if available
-      const audioRef: AudioInfo | null = audio;
-      const subRef: SubInfo | null = subtitles;
+      const audioRef = audio as AudioInfo | null;
+      const subRef = subtitles as SubInfo | null;
       const totalAudioMs = audioRef?.duration_ms ?? subRef?.duration_ms ?? Math.round(images.length * sceneSeconds * 1000);
       const perScene = totalAudioMs / images.length / 1000;
       const scenes = images.map((img, i) => ({
