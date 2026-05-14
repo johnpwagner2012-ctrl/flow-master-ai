@@ -138,6 +138,8 @@ export type Database = {
           node_key: string
           node_type: string
           output_data: Json | null
+          progress_message: string | null
+          progress_pct: number
           provider: string | null
           started_at: string | null
           status: string
@@ -156,6 +158,8 @@ export type Database = {
           node_key: string
           node_type: string
           output_data?: Json | null
+          progress_message?: string | null
+          progress_pct?: number
           provider?: string | null
           started_at?: string | null
           status?: string
@@ -174,6 +178,8 @@ export type Database = {
           node_key?: string
           node_type?: string
           output_data?: Json | null
+          progress_message?: string | null
+          progress_pct?: number
           provider?: string | null
           started_at?: string | null
           status?: string
