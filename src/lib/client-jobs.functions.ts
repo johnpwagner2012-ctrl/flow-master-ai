@@ -41,6 +41,37 @@ export const heartbeatClientJob = createServerFn({ method: "POST" })
     return { ok: !!row };
   });
 
+/** Report incremental progress for a running browser job (0-100 + short message). */
+export const reportClientJobProgress = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) =>
+    z.object({
+      jobId: z.string().uuid(),
+      workerId: z.string().min(1).max(80),
+      pct: z.number().int().min(0).max(100),
+      message: z.string().max(200).optional(),
+    }).parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase } = context;
+    const { data: job } = await supabase
+      .from("pending_client_jobs")
+      .select("node_execution_id, claimed_by, status")
+      .eq("id", data.jobId)
+      .maybeSingle();
+    if (!job || job.status !== "claimed" || job.claimed_by !== data.workerId) return { ok: false };
+    const lease = new Date(Date.now() + 120 * 1000).toISOString();
+    await supabase
+      .from("pending_client_jobs")
+      .update({ heartbeat_at: new Date().toISOString(), lease_until: lease })
+      .eq("id", data.jobId);
+    await supabase
+      .from("node_executions")
+      .update({ progress_pct: data.pct, progress_message: data.message ?? null })
+      .eq("id", job.node_execution_id);
+    return { ok: true };
+  });
+
 /** Mark a browser job as completed. Idempotent: safe to call twice. */
 export const completeClientJob = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])

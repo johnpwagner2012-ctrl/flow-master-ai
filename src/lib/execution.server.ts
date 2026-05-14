@@ -295,6 +295,96 @@ async function executeNode(
       await log(sb, { runId, nodeExecId, userId, level: "info", message: `Exported ${up.size} bytes` });
       return { url, asset_id: asset?.id, bucket: "scripts", storage_path: up.path };
     }
+    case "timeline_builder": {
+      const sceneSeconds = Math.max(0.5, Math.min(20, Number(cfg.scene_seconds ?? 3)));
+      const fps = Math.max(1, Math.min(60, Number(cfg.fps ?? 30)));
+      const res = String(cfg.resolution ?? "vertical");
+      const dims = res === "square" ? { w: 1080, h: 1080 } :
+        res === "landscape" ? { w: 1920, h: 1080 } : { w: 1080, h: 1920 };
+
+      type AudioInfo = { url: string; mime_type?: string; duration_ms?: number; manifest?: unknown };
+      type SubInfo = { url?: string; format?: string; segments?: unknown; content?: string; duration_ms?: number };
+      const images: { url: string; mime_type?: string }[] = [];
+      let audio: AudioInfo | null = null;
+      let subtitles: SubInfo | null = null;
+      const overlays: Record<string, unknown>[] = [];
+
+      const collect = (rec: Record<string, unknown>) => {
+        const url = (rec.url ?? rec.file_url) as string | undefined;
+        const mime = (rec.mime_type as string | undefined) ?? "";
+        if (Array.isArray(rec.overlays)) overlays.push(...(rec.overlays as Record<string, unknown>[]));
+        if (rec.overlay && typeof rec.overlay === "object") overlays.push(rec.overlay as Record<string, unknown>);
+        if (typeof url !== "string") return;
+        if (mime.startsWith("image/")) images.push({ url, mime_type: mime });
+        else if (mime.startsWith("audio/") || (mime === "application/json" && rec.provider === "browser_speech")) {
+          const a: AudioInfo = { url, mime_type: mime, duration_ms: rec.duration_ms as number | undefined, manifest: rec.manifest };
+          audio = a;
+        } else if (mime.includes("subrip") || mime.includes("vtt") || rec.format === "srt" || rec.format === "vtt") {
+          const s: SubInfo = {
+            url, format: (rec.format as string) ?? "srt",
+            segments: rec.segments, content: rec.content as string | undefined,
+            duration_ms: rec.duration_ms as number | undefined,
+          };
+          subtitles = s;
+        }
+      };
+      for (const v of Object.values(inputs)) {
+        if (v && typeof v === "object") collect(v as Record<string, unknown>);
+      }
+      if (images.length === 0) throw new Error("Timeline Builder: at least one upstream image is required");
+
+      // Distribute scene durations: align with audio if available
+      const audioRef = audio as AudioInfo | null;
+      const subRef = subtitles as SubInfo | null;
+      const totalAudioMs = audioRef?.duration_ms ?? subRef?.duration_ms ?? Math.round(images.length * sceneSeconds * 1000);
+      const perScene = totalAudioMs / images.length / 1000;
+      const scenes = images.map((img, i) => ({
+        index: i,
+        image_url: img.url,
+        start_seconds: +(i * perScene).toFixed(3),
+        end_seconds: +((i + 1) * perScene).toFixed(3),
+        duration_seconds: +perScene.toFixed(3),
+      }));
+
+      const timeline = {
+        version: 1,
+        resolution: dims, fps,
+        duration_seconds: +(totalAudioMs / 1000).toFixed(3),
+        scenes,
+        audio: audioRef ? { url: audioRef.url, mime_type: audioRef.mime_type, manifest: audioRef.manifest } : null,
+        subtitles: subRef,
+        overlays,
+      };
+      await log(sb, { runId, nodeExecId, userId, level: "info",
+        message: `Built timeline: ${scenes.length} scenes, ${(totalAudioMs/1000).toFixed(1)}s, ${dims.w}×${dims.h}@${fps}fps` });
+      return { timeline, ...timeline };
+    }
+    case "media_overlay": {
+      const overlayType = String(cfg.overlay_type ?? "hook_text");
+      const text = interpolate(String(cfg.text ?? ""), { input: inputs, ...inputs });
+      const imageField = String(cfg.image_field ?? "url").trim();
+      let imageUrl: string | null = null;
+      const upstreams = Object.values(inputs);
+      if (overlayType === "image") {
+        for (const v of upstreams) {
+          if (v && typeof v === "object") {
+            const rec = v as Record<string, unknown>;
+            const candidate = rec[imageField] ?? rec.url ?? rec.file_url;
+            if (typeof candidate === "string" && /^https?:/.test(candidate)) { imageUrl = candidate; break; }
+          }
+        }
+      }
+      const overlay = {
+        kind: overlayType,
+        text: overlayType === "image" ? null : text,
+        image_url: imageUrl,
+      };
+      // Pass through the first upstream object and append our overlay
+      const base = (upstreams.find((v) => v && typeof v === "object") as Record<string, unknown> | undefined) ?? {};
+      const baseOverlays = Array.isArray(base.overlays) ? (base.overlays as unknown[]) : [];
+      await log(sb, { runId, nodeExecId, userId, level: "info", message: `Added overlay: ${overlayType}` });
+      return { ...base, overlays: [...baseOverlays, overlay] };
+    }
     case "youtube_upload": {
       const sourceField = String(cfg.source_field ?? "url").trim();
       const upstreamKeys = Object.keys(inputs);
