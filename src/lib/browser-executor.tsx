@@ -6,6 +6,7 @@ import {
   completeClientJob,
   failClientJob,
   heartbeatClientJob,
+  reportClientJobProgress,
 } from "./client-jobs.functions";
 
 // ---------- types ----------
@@ -34,6 +35,8 @@ type AssetOut = {
 };
 
 type HandlerResult = { output: Record<string, unknown>; assets: AssetOut[] };
+
+type ProgressFn = (pct: number, message?: string) => void;
 
 // ---------- utils ----------
 const POLL_INTERVAL_MS = 4000;
@@ -82,6 +85,69 @@ function pickUpstreamString(inputs: Record<string, unknown>, fields: string[]): 
     }
   }
   return null;
+}
+
+// ---------- subtitle styling (ASS) ----------
+type SubSegment = { start: number; end: number; text: string };
+
+function fmtAssTime(s: number): string {
+  const cs = Math.floor((s % 1) * 100);
+  const sec = Math.floor(s) % 60;
+  const min = Math.floor(s / 60) % 60;
+  const hr = Math.floor(s / 3600);
+  return `${hr}:${String(min).padStart(2, "0")}:${String(sec).padStart(2, "0")}.${String(cs).padStart(2, "0")}`;
+}
+
+function buildAss(segments: SubSegment[], style: string, width: number, height: number): string {
+  const fontSize = Math.round(height * 0.05);
+  // Bold white + black stroke (default), centered lower-third.
+  // Colors are AABBGGRR in ASS.
+  const primary = "&H00FFFFFF";  // white
+  const outline = "&H00000000";  // black
+  const back = "&H80000000";     // semi-transparent black
+  const styleLine = style === "minimal"
+    ? `Style: Default,Inter,${Math.round(fontSize * 0.8)},${primary},&H000000FF,${outline},${back},0,0,0,0,100,100,0,0,3,0,2,2,30,30,${Math.round(height * 0.08)},1`
+    : `Style: Default,Arial Black,${fontSize},${primary},&H000000FF,${outline},&H00000000,1,0,0,0,100,100,0,0,1,4,0,2,40,40,${Math.round(height * 0.18)},1`;
+
+  const events = segments.map((seg) => {
+    const text = seg.text.replace(/\n/g, "\\N");
+    return `Dialogue: 0,${fmtAssTime(seg.start)},${fmtAssTime(seg.end)},Default,,0,0,0,,${text}`;
+  }).join("\n");
+
+  return `[Script Info]
+ScriptType: v4.00+
+PlayResX: ${width}
+PlayResY: ${height}
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+${styleLine}
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+${events}
+`;
+}
+
+/** Convert SRT/VTT text into segments. */
+function parseSrtVtt(content: string): SubSegment[] {
+  const out: SubSegment[] = [];
+  const blocks = content.replace(/\r/g, "").split(/\n\n+/);
+  const tt = (s: string) => {
+    const m = /(\d+):(\d+):(\d+)[.,](\d+)/.exec(s);
+    if (!m) return 0;
+    return Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]) + Number(`0.${m[4]}`);
+  };
+  for (const b of blocks) {
+    const lines = b.split("\n").filter((l) => l && !/^WEBVTT/.test(l));
+    const tIdx = lines.findIndex((l) => l.includes("-->"));
+    if (tIdx === -1) continue;
+    const [a, c] = lines[tIdx].split("-->").map((x) => x.trim());
+    const text = lines.slice(tIdx + 1).join("\n");
+    if (text) out.push({ start: tt(a), end: tt(c), text });
+  }
+  return out;
 }
 
 // ---------- handlers ----------
@@ -174,7 +240,7 @@ async function handleTextToSpeech(userId: string, job: Job): Promise<HandlerResu
 
 // Lazy ffmpeg loader so the bundle doesn't pay the cost upfront.
 let ffmpegInstance: { ff: unknown; util: typeof import("@ffmpeg/util") } | null = null;
-async function getFfmpeg() {
+async function getFfmpeg(onProgress?: (ratio: number) => void) {
   if (ffmpegInstance) return ffmpegInstance;
   const [{ FFmpeg }, util] = await Promise.all([
     import("@ffmpeg/ffmpeg"),
@@ -187,8 +253,210 @@ async function getFfmpeg() {
     wasmURL: await util.toBlobURL(`${baseURL}/ffmpeg-core.wasm`, "application/wasm"),
   });
   ffmpegInstance = { ff, util };
+  if (onProgress) {
+    (ff as unknown as { on: (e: string, cb: (p: { progress: number }) => void) => void })
+      .on?.("progress", ({ progress }) => onProgress(Math.max(0, Math.min(1, progress))));
+  }
   return ffmpegInstance;
 }
+
+function getFfmpegHandle(inst: { ff: unknown }) {
+  return inst.ff as {
+    writeFile: (n: string, d: Uint8Array) => Promise<void>;
+    exec: (args: string[]) => Promise<number>;
+    readFile: (n: string) => Promise<Uint8Array>;
+    deleteFile?: (n: string) => Promise<void>;
+    on?: (e: string, cb: (p: { progress: number }) => void) => void;
+  };
+}
+
+/** Single-frame thumbnail extraction from upstream video. */
+async function handleThumbnail(userId: string, job: Job, progress: ProgressFn): Promise<HandlerResult> {
+  progress(5, "Loading ffmpeg");
+  const inst = await getFfmpeg();
+  const ffmpeg = getFfmpegHandle(inst);
+  const { util } = inst;
+
+  const cfg = job.payload.config;
+  const sourceField = String(cfg.source_field ?? "url");
+  const ts = Math.max(0, Number(cfg.timestamp_seconds ?? 1));
+  const url = pickUpstreamString(job.payload.inputs, [sourceField, "url", "file_url"]);
+  if (!url) throw new Error("Thumbnail Generator: no upstream video URL");
+
+  progress(20, "Downloading video");
+  await ffmpeg.writeFile("in.mp4", await util.fetchFile(url));
+  progress(50, "Extracting frame");
+  const code = await ffmpeg.exec(["-y", "-ss", String(ts), "-i", "in.mp4", "-frames:v", "1", "-q:v", "3", "out.jpg"]);
+  if (code !== 0) throw new Error(`ffmpeg exit ${code}`);
+  const data = await ffmpeg.readFile("out.jpg");
+  const blob = new Blob([data as BlobPart], { type: "image/jpeg" });
+  progress(85, "Uploading");
+  const up = await uploadBlob(userId, "thumbnails", `${job.node_key}-thumb.jpg`, blob);
+  try { await ffmpeg.deleteFile?.("in.mp4"); await ffmpeg.deleteFile?.("out.jpg"); } catch { /* ignore */ }
+  progress(100, "Done");
+  return {
+    output: { url: up.signedUrl, storage_path: up.path, bucket: "thumbnails", mime_type: "image/jpeg", size_bytes: up.size, provider: "ffmpeg_wasm" },
+    assets: [{
+      type: "image", name: `Thumbnail ${job.node_key}`,
+      storage_bucket: "thumbnails", storage_path: up.path,
+      mime_type: "image/jpeg", size_bytes: up.size, file_url: up.signedUrl,
+      metadata: { source_url: url, timestamp_seconds: ts },
+    }],
+  };
+}
+
+/** Final 9:16 MP4 render driven by an upstream Timeline Builder output. */
+async function handleVideoExport(userId: string, job: Job, progress: ProgressFn): Promise<HandlerResult> {
+  progress(2, "Loading ffmpeg");
+  const inst = await getFfmpeg((r) => progress(40 + Math.round(r * 50), "Encoding"));
+  const ffmpeg = getFfmpegHandle(inst);
+  const { util } = inst;
+
+  // Find a timeline object from upstream
+  type Timeline = {
+    resolution: { w: number; h: number };
+    fps: number;
+    duration_seconds: number;
+    scenes: { image_url: string; duration_seconds: number }[];
+    audio: { url: string; mime_type?: string } | null;
+    subtitles: { url?: string; content?: string; segments?: SubSegment[] } | null;
+  };
+  let timeline: Timeline | null = null;
+  for (const v of Object.values(job.payload.inputs)) {
+    if (v && typeof v === "object") {
+      const rec = v as Record<string, unknown>;
+      if (rec.scenes && Array.isArray(rec.scenes)) { timeline = rec as unknown as Timeline; break; }
+      if (rec.timeline && typeof rec.timeline === "object") { timeline = rec.timeline as Timeline; break; }
+    }
+  }
+  if (!timeline) throw new Error("Video Export: no upstream Timeline Builder output");
+  const { w, h } = timeline.resolution;
+  const fps = timeline.fps;
+
+  progress(8, "Downloading scenes");
+  const written: string[] = [];
+  for (let i = 0; i < timeline.scenes.length; i++) {
+    const sc = timeline.scenes[i];
+    const ext = sc.image_url.split("?")[0].split(".").pop()?.toLowerCase() ?? "jpg";
+    const name = `img_${i}.${ext}`;
+    await ffmpeg.writeFile(name, await util.fetchFile(sc.image_url));
+    written.push(name);
+    progress(8 + Math.round((i / timeline.scenes.length) * 12), `Scene ${i + 1}/${timeline.scenes.length}`);
+  }
+
+  // Concat list with per-scene durations
+  const concatLines = timeline.scenes
+    .map((sc, i) => `file '${written[i]}'\nduration ${Math.max(0.2, sc.duration_seconds)}`)
+    .concat([`file '${written[written.length - 1]}'`])
+    .join("\n");
+  await ffmpeg.writeFile("list.txt", new TextEncoder().encode(concatLines));
+
+  // Audio (optional). Skip non-audio MIME (e.g. timing-manifest JSON).
+  let audioFile: string | null = null;
+  const audioMime = timeline.audio?.mime_type ?? "";
+  if (timeline.audio && audioMime.startsWith("audio/")) {
+    progress(22, "Downloading audio");
+    const aExt = audioMime.includes("mpeg") ? "mp3" : audioMime.includes("wav") ? "wav" : "m4a";
+    audioFile = `audio.${aExt}`;
+    await ffmpeg.writeFile(audioFile, await util.fetchFile(timeline.audio.url));
+  }
+
+  // Subtitles (optional)
+  const cfg = job.payload.config;
+  const burn = String(cfg.burn_subtitles ?? "true") === "true";
+  const style = String(cfg.subtitle_style ?? "bold_stroke");
+  let subFile: string | null = null;
+  if (burn && timeline.subtitles) {
+    let segs: SubSegment[] = [];
+    if (Array.isArray(timeline.subtitles.segments)) {
+      segs = timeline.subtitles.segments as SubSegment[];
+    } else if (timeline.subtitles.url) {
+      const txt = await (await fetch(timeline.subtitles.url)).text();
+      segs = parseSrtVtt(txt);
+    } else if (timeline.subtitles.content) {
+      segs = parseSrtVtt(timeline.subtitles.content);
+    }
+    if (segs.length) {
+      const ass = buildAss(segs, style, w, h);
+      subFile = "subs.ass";
+      await ffmpeg.writeFile(subFile, new TextEncoder().encode(ass));
+    }
+  }
+
+  progress(35, "Encoding video");
+  const vf = [
+    `scale=${w}:${h}:force_original_aspect_ratio=increase`,
+    `crop=${w}:${h}`,
+    `fps=${fps}`,
+    ...(subFile ? [`ass=${subFile}`] : []),
+  ].join(",");
+
+  const args = [
+    "-y", "-f", "concat", "-safe", "0", "-i", "list.txt",
+    ...(audioFile ? ["-i", audioFile] : []),
+    "-vf", vf,
+    "-pix_fmt", "yuv420p",
+    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "26",
+    ...(audioFile ? ["-c:a", "aac", "-shortest"] : []),
+    "out.mp4",
+  ];
+  const code = await ffmpeg.exec(args);
+  if (code !== 0) throw new Error(`ffmpeg exit ${code}`);
+
+  progress(92, "Uploading video");
+  const data = await ffmpeg.readFile("out.mp4");
+  const blob = new Blob([data as BlobPart], { type: "video/mp4" });
+  const up = await uploadBlob(userId, "videos", `${job.node_key}-final.mp4`, blob);
+
+  // Auto-thumbnail
+  let thumbUrl: string | undefined;
+  let thumbPath: string | undefined;
+  try {
+    progress(96, "Thumbnail");
+    await ffmpeg.exec(["-y", "-ss", "0.5", "-i", "out.mp4", "-frames:v", "1", "-q:v", "3", "thumb.jpg"]);
+    const t = await ffmpeg.readFile("thumb.jpg");
+    const tBlob = new Blob([t as BlobPart], { type: "image/jpeg" });
+    const tUp = await uploadBlob(userId, "thumbnails", `${job.node_key}-thumb.jpg`, tBlob);
+    thumbUrl = tUp.signedUrl;
+    thumbPath = tUp.path;
+  } catch { /* thumbnail best-effort */ }
+
+  // Cleanup
+  try {
+    for (const f of [...written, "list.txt", "out.mp4", "thumb.jpg", subFile, audioFile].filter(Boolean) as string[]) {
+      await ffmpeg.deleteFile?.(f);
+    }
+  } catch { /* ignore */ }
+
+  progress(100, "Done");
+  const assets: AssetOut[] = [{
+    type: "video", name: `Video ${job.node_key}`,
+    storage_bucket: "videos", storage_path: up.path,
+    mime_type: "video/mp4", size_bytes: up.size,
+    duration_ms: Math.round(timeline.duration_seconds * 1000),
+    file_url: up.signedUrl,
+    metadata: { resolution: timeline.resolution, fps, scenes: timeline.scenes.length, has_audio: !!audioFile, burned_subs: !!subFile },
+  }];
+  if (thumbUrl && thumbPath) {
+    assets.push({
+      type: "image", name: `Thumbnail ${job.node_key}`,
+      storage_bucket: "thumbnails", storage_path: thumbPath,
+      mime_type: "image/jpeg", file_url: thumbUrl,
+      metadata: { generated_from: "video_export" },
+    });
+  }
+  return {
+    output: {
+      url: up.signedUrl, storage_path: up.path, bucket: "videos",
+      mime_type: "video/mp4", size_bytes: up.size,
+      duration_ms: Math.round(timeline.duration_seconds * 1000),
+      thumbnail_url: thumbUrl, provider: "ffmpeg_wasm",
+      resolution: timeline.resolution, fps,
+    },
+    assets,
+  };
+}
+
 
 async function handleFfmpeg(
   userId: string,
@@ -300,11 +568,13 @@ async function handleFfmpeg(
   };
 }
 
-async function runJob(userId: string, job: Job): Promise<HandlerResult> {
+async function runJob(userId: string, job: Job, progress: ProgressFn): Promise<HandlerResult> {
   switch (job.node_type) {
     case "text_to_speech": return handleTextToSpeech(userId, job);
     case "video_assembler": return handleFfmpeg(userId, job, "video_assembler");
     case "ffmpeg_processor": return handleFfmpeg(userId, job, "ffmpeg_processor");
+    case "thumbnail_generator": return handleThumbnail(userId, job, progress);
+    case "video_export": return handleVideoExport(userId, job, progress);
     default: throw new Error(`No browser handler for node type "${job.node_type}"`);
   }
 }
@@ -323,6 +593,7 @@ export function BrowserExecutor() {
   const heartbeatFn = useServerFn(heartbeatClientJob);
   const completeFn = useServerFn(completeClientJob);
   const failFn = useServerFn(failClientJob);
+  const progressFn = useServerFn(reportClientJobProgress);
   const busyRef = useRef(false);
 
   useEffect(() => {
@@ -339,7 +610,7 @@ export function BrowserExecutor() {
         const { data, error } = await supabase.rpc("claim_client_job", {
           _worker_id: wid,
           _lease_seconds: LEASE_SECONDS,
-          _types: ["text_to_speech", "video_assembler", "ffmpeg_processor"],
+          _types: ["text_to_speech", "video_assembler", "ffmpeg_processor", "thumbnail_generator", "video_export"],
         });
         if (error || !data || (Array.isArray(data) && data.length === 0)) return;
         const job = (Array.isArray(data) ? data[0] : data) as Job;
@@ -351,7 +622,15 @@ export function BrowserExecutor() {
         }, HEARTBEAT_MS);
 
         try {
-          const result = await runJob(userId, job);
+          let lastPct = -1;
+          const onProgress: ProgressFn = (pct, message) => {
+            const p = Math.max(0, Math.min(100, Math.round(pct)));
+            if (p === lastPct) return;
+            lastPct = p;
+            progressFn({ data: { jobId: job.id, workerId: wid, pct: p, message } })
+              .catch(() => { /* progress best-effort */ });
+          };
+          const result = await runJob(userId, job, onProgress);
           await completeFn({ data: { jobId: job.id, workerId: wid, output: result.output, assets: result.assets } });
         } catch (e) {
           const msg = (e as Error).message ?? "Browser job failed";
@@ -368,7 +647,7 @@ export function BrowserExecutor() {
     const interval = window.setInterval(tick, POLL_INTERVAL_MS);
     void tick();
     return () => { cancelled = true; window.clearInterval(interval); };
-  }, [userId, completeFn, failFn, heartbeatFn]);
+  }, [userId, completeFn, failFn, heartbeatFn, progressFn]);
 
   return null;
 }
