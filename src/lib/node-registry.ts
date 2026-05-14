@@ -1,7 +1,7 @@
 import {
   Webhook, Globe, GitBranch, Timer, Sparkles, Clock,
   Mic, Captions, Video, Youtube, Save, ImageIcon, Film,
-  Wand2, Combine, Download,
+  Wand2, Combine, Download, Layers, Layout, Image as ImageIcon2, FileVideo,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -21,7 +21,11 @@ export type NodeKind =
   | "save_asset"
   | "asset_transform"
   | "asset_merge"
-  | "asset_export";
+  | "asset_export"
+  | "timeline_builder"
+  | "media_overlay"
+  | "thumbnail_generator"
+  | "video_export";
 
 export type NodeField =
   | { key: string; label: string; type: "text" | "textarea" | "number" | "url"; placeholder?: string; default?: string | number }
@@ -211,6 +215,60 @@ export const NODE_REGISTRY: Record<NodeKind, NodeDef> = {
     description: "Export the upstream payload as JSON to your library for download.",
     fields: [
       { key: "name", label: "Export name", type: "text", placeholder: "export.json" },
+    ],
+  },
+  timeline_builder: {
+    kind: "timeline_builder", label: "Timeline Builder", category: "Media", icon: Layout, hue: 200,
+    executor: "server", cronCompatible: true, provider: "text_timing",
+    description: "Compose a structured render timeline from upstream images, audio (with word timings), and subtitles.",
+    fields: [
+      { key: "scene_seconds", label: "Default seconds per scene", type: "number", default: 3 },
+      { key: "resolution", label: "Resolution", type: "select",
+        options: [
+          { label: "Vertical 1080×1920", value: "vertical" },
+          { label: "Square 1080×1080", value: "square" },
+          { label: "Landscape 1920×1080", value: "landscape" },
+        ], default: "vertical" },
+      { key: "fps", label: "FPS", type: "number", default: 30 },
+    ],
+  },
+  media_overlay: {
+    kind: "media_overlay", label: "Media Overlay", category: "Media", icon: Layers, hue: 200,
+    executor: "server", cronCompatible: true,
+    description: "Attach a text or image overlay (logo, watermark, hook text) to the upstream timeline.",
+    fields: [
+      { key: "overlay_type", label: "Overlay type", type: "select",
+        options: [
+          { label: "Hook text (top)", value: "hook_text" },
+          { label: "Watermark text (bottom-right)", value: "watermark" },
+          { label: "Image (top-left logo)", value: "image" },
+        ], default: "hook_text" },
+      { key: "text", label: "Text (for text overlays)", type: "text", placeholder: "Wait for it…" },
+      { key: "image_field", label: "Upstream field for image URL", type: "text", default: "url" },
+    ],
+  },
+  thumbnail_generator: {
+    kind: "thumbnail_generator", label: "Thumbnail Generator", category: "Media", icon: ImageIcon2, hue: 200,
+    executor: "browser", cronCompatible: false, provider: "ffmpeg_wasm",
+    description: "Extract a single high-quality JPG thumbnail from an upstream video at a chosen timestamp.",
+    fields: [
+      { key: "timestamp_seconds", label: "Timestamp (seconds)", type: "number", default: 1 },
+      { key: "source_field", label: "Upstream video URL field", type: "text", default: "url" },
+    ],
+  },
+  video_export: {
+    kind: "video_export", label: "Video Export", category: "Media", icon: FileVideo, hue: 200,
+    executor: "browser", cronCompatible: false, provider: "ffmpeg_wasm",
+    description: "Render the final 9:16 MP4 from a Timeline Builder output: images + audio + burned bold-white subtitles. Auto-generates a thumbnail.",
+    fields: [
+      { key: "burn_subtitles", label: "Burn subtitles", type: "select",
+        options: [{ label: "Yes", value: "true" }, { label: "No", value: "false" }], default: "true" },
+      { key: "subtitle_style", label: "Subtitle style", type: "select",
+        options: [
+          { label: "Bold white + black stroke", value: "bold_stroke" },
+          { label: "Karaoke word highlight", value: "karaoke" },
+          { label: "Minimal caption bar", value: "minimal" },
+        ], default: "bold_stroke" },
     ],
   },
 };
