@@ -18,6 +18,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // CRITICAL: register listener BEFORE getSession() to avoid missing the
+    // INITIAL_SESSION / TOKEN_REFRESHED events that fire during hydration.
     const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
       setSession(s);
       setLoading(false);
@@ -34,11 +36,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     user: session?.user ?? null,
     loading,
     signIn: async (email, password) => {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
+      // Apply session synchronously so consumers (route guards) see the
+      // authenticated state on the very next render — the onAuthStateChange
+      // event is a microtask behind and would otherwise let a freshly-issued
+      // navigate() to a protected route observe session=null and bounce.
+      setSession(data.session);
+      setLoading(false);
     },
     signUp: async (email, password, displayName) => {
-      const { error } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
@@ -47,9 +55,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         },
       });
       if (error) throw error;
+      if (data.session) {
+        setSession(data.session);
+        setLoading(false);
+      }
     },
     signOut: async () => {
       await supabase.auth.signOut();
+      setSession(null);
     },
   };
 
