@@ -302,9 +302,11 @@ async function executeNode(
       const dims = res === "square" ? { w: 1080, h: 1080 } :
         res === "landscape" ? { w: 1920, h: 1080 } : { w: 1080, h: 1920 };
 
+      type AudioInfo = { url: string; mime_type?: string; duration_ms?: number; manifest?: unknown };
+      type SubInfo = { url?: string; format?: string; segments?: unknown; content?: string; duration_ms?: number };
       const images: { url: string; mime_type?: string }[] = [];
-      let audio: { url: string; mime_type?: string; duration_ms?: number; manifest?: unknown } | null = null;
-      let subtitles: { url?: string; format?: string; segments?: unknown; content?: string; duration_ms?: number } | null = null;
+      let audio: AudioInfo | null = null;
+      let subtitles: SubInfo | null = null;
       const overlays: Record<string, unknown>[] = [];
 
       const collect = (rec: Record<string, unknown>) => {
@@ -314,14 +316,16 @@ async function executeNode(
         if (rec.overlay && typeof rec.overlay === "object") overlays.push(rec.overlay as Record<string, unknown>);
         if (typeof url !== "string") return;
         if (mime.startsWith("image/")) images.push({ url, mime_type: mime });
-        else if (mime.startsWith("audio/") || mime === "application/json" && rec.provider === "browser_speech") {
-          audio = { url, mime_type: mime, duration_ms: rec.duration_ms as number | undefined, manifest: rec.manifest };
+        else if (mime.startsWith("audio/") || (mime === "application/json" && rec.provider === "browser_speech")) {
+          const a: AudioInfo = { url, mime_type: mime, duration_ms: rec.duration_ms as number | undefined, manifest: rec.manifest };
+          audio = a;
         } else if (mime.includes("subrip") || mime.includes("vtt") || rec.format === "srt" || rec.format === "vtt") {
-          subtitles = {
+          const s: SubInfo = {
             url, format: (rec.format as string) ?? "srt",
             segments: rec.segments, content: rec.content as string | undefined,
             duration_ms: rec.duration_ms as number | undefined,
           };
+          subtitles = s;
         }
       };
       for (const v of Object.values(inputs)) {
@@ -330,7 +334,9 @@ async function executeNode(
       if (images.length === 0) throw new Error("Timeline Builder: at least one upstream image is required");
 
       // Distribute scene durations: align with audio if available
-      const totalAudioMs = audio?.duration_ms ?? subtitles?.duration_ms ?? Math.round(images.length * sceneSeconds * 1000);
+      const audioRef: AudioInfo | null = audio;
+      const subRef: SubInfo | null = subtitles;
+      const totalAudioMs = audioRef?.duration_ms ?? subRef?.duration_ms ?? Math.round(images.length * sceneSeconds * 1000);
       const perScene = totalAudioMs / images.length / 1000;
       const scenes = images.map((img, i) => ({
         index: i,
@@ -345,8 +351,8 @@ async function executeNode(
         resolution: dims, fps,
         duration_seconds: +(totalAudioMs / 1000).toFixed(3),
         scenes,
-        audio: audio ? { url: audio.url, mime_type: audio.mime_type, manifest: audio.manifest } : null,
-        subtitles,
+        audio: audioRef ? { url: audioRef.url, mime_type: audioRef.mime_type, manifest: audioRef.manifest } : null,
+        subtitles: subRef,
         overlays,
       };
       await log(sb, { runId, nodeExecId, userId, level: "info",
