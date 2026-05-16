@@ -1,5 +1,5 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { LayoutDashboard, Workflow, Settings, Sparkles, LogOut, Library } from "lucide-react";
+import { LayoutDashboard, Workflow, Settings, Sparkles, LogOut, Library, BookText } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 
@@ -7,6 +7,7 @@ const items = [
   { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
   { title: "Workflows", url: "/workflows", icon: Workflow },
   { title: "Assets", url: "/assets", icon: Library },
+  { title: "Templates", url: "/templates", icon: BookText },
   { title: "Settings", url: "/settings", icon: Settings },
 ];
 

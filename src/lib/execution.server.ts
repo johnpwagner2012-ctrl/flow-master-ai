@@ -1,6 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import { NODE_REGISTRY, type NodeKind } from "./node-registry";
+import {
+  resolveTemplate, interpolatePrompt, parseJsonArray, summariseUpstream,
+} from "./prompt-templates";
 
 type SB = SupabaseClient<Database>;
 
@@ -82,6 +85,79 @@ async function callLovableAI(model: string, prompt: string): Promise<string> {
   const content = json.choices?.[0]?.message?.content ?? "";
   if (!content) throw new Error("AI returned empty response");
   return content;
+}
+
+async function callLovableChat(
+  model: string,
+  systemPrompt: string | null,
+  userPrompt: string,
+): Promise<string> {
+  const apiKey = process.env.LOVABLE_API_KEY;
+  if (!apiKey) throw new Error("LOVABLE_API_KEY is not configured");
+  const messages: { role: "system" | "user"; content: string }[] = [];
+  if (systemPrompt && systemPrompt.trim()) messages.push({ role: "system", content: systemPrompt });
+  messages.push({ role: "user", content: userPrompt });
+  const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ model: model || "google/gemini-2.5-flash", messages }),
+  });
+  if (res.status === 429) throw new Error("AI rate limit exceeded. Please retry shortly.");
+  if (res.status === 402) throw new Error("AI credits exhausted. Add credits in Settings → Workspace → Usage.");
+  if (!res.ok) throw new Error(`AI gateway error ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  const json = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+  const content = json.choices?.[0]?.message?.content ?? "";
+  if (!content) throw new Error("AI returned empty response");
+  return content;
+}
+
+type TrendItem = {
+  title: string; url: string; subreddit: string; score: number;
+  num_comments: number; permalink: string; created_utc: number;
+};
+
+async function fetchSubredditTop(subreddit: string, time: string, limit: number): Promise<TrendItem[]> {
+  const t = ["hour", "day", "week", "month", "year", "all"].includes(time) ? time : "day";
+  const n = Math.max(1, Math.min(50, limit));
+  const url = `https://www.reddit.com/r/${encodeURIComponent(subreddit)}/top.json?t=${t}&limit=${n}`;
+  const res = await fetch(url, { headers: { "User-Agent": "flowforge-trend-fetcher/1.0" } });
+  if (!res.ok) throw new Error(`Reddit ${subreddit} HTTP ${res.status}`);
+  const json = (await res.json()) as { data?: { children?: Array<{ data: Record<string, unknown> }> } };
+  const items = json.data?.children ?? [];
+  return items.map((c) => {
+    const d = c.data;
+    return {
+      title: String(d.title ?? ""),
+      url: String(d.url ?? ""),
+      subreddit: String(d.subreddit ?? subreddit),
+      score: Number(d.score ?? 0),
+      num_comments: Number(d.num_comments ?? 0),
+      permalink: d.permalink ? `https://www.reddit.com${String(d.permalink)}` : "",
+      created_utc: Number(d.created_utc ?? 0),
+    };
+  });
+}
+
+async function persistTextAsset(
+  sb: SB, params: {
+    userId: string; runId: string; nodeExecId: string; workflowId: string;
+    nodeKey: string; type: string; name: string; content: string;
+    metadata?: Record<string, unknown>;
+  },
+) {
+  const path = `${params.runId}/${params.nodeKey}-${Date.now()}.json`;
+  const base64 = btoa(unescape(encodeURIComponent(params.content)));
+  const up = await uploadBase64(sb, params.userId, "scripts", path, base64, "application/json");
+  const url = await signedUrl(sb, "scripts", up.path);
+  const { data: asset } = await sb.from("assets").insert({
+    user_id: params.userId, workflow_run_id: params.runId, node_execution_id: params.nodeExecId,
+    workflow_id: params.workflowId, node_key: params.nodeKey,
+    type: params.type, name: params.name,
+    content: params.content, file_url: url, mime_type: "application/json",
+    size_bytes: up.size, storage_bucket: "scripts", storage_path: up.path,
+    metadata: (params.metadata ?? {}) as never,
+  }).select("id").single();
+  return { asset_id: asset?.id, url, storage_path: up.path };
 }
 
 async function callLovableImage(model: string, prompt: string): Promise<{ base64: string; mime: string }> {
@@ -517,6 +593,93 @@ async function executeNode(
 
       await log(sb, { runId, nodeExecId, userId, level: "info", message: `Saved ${assetType} asset ${assetRow.id}` });
       return { asset_id: assetRow.id, type: assetType, content, file_url: fileUrl };
+    }
+    case "trend_fetcher": {
+      const subs = String(cfg.subreddits ?? "todayilearned")
+        .split(",").map((s) => s.trim().replace(/^r\//, "")).filter(Boolean);
+      if (subs.length === 0) throw new Error("Trend Fetcher: no subreddits configured");
+      const time = String(cfg.time ?? "day");
+      const limit = Number(cfg.limit ?? 10);
+      await log(sb, { runId, nodeExecId, userId, level: "info",
+        message: `Fetching r/${subs.join(", r/")} top/${time} limit=${limit}` });
+      const results = await Promise.allSettled(subs.map((s) => fetchSubredditTop(s, time, limit)));
+      const trends: TrendItem[] = [];
+      const errors: string[] = [];
+      results.forEach((r, i) => {
+        if (r.status === "fulfilled") trends.push(...r.value);
+        else errors.push(`${subs[i]}: ${r.reason instanceof Error ? r.reason.message : String(r.reason)}`);
+      });
+      if (trends.length === 0) {
+        throw new Error(`Trend Fetcher: no results (${errors.join("; ") || "empty"})`);
+      }
+      trends.sort((a, b) => b.score - a.score);
+      await persistTextAsset(sb, {
+        userId, runId, nodeExecId, workflowId, nodeKey: node.node_key,
+        type: "trends", name: `Trends ${subs.join(",")}`,
+        content: JSON.stringify(trends, null, 2),
+        metadata: { subreddits: subs, time, limit, count: trends.length, errors },
+      });
+      await log(sb, { runId, nodeExecId, userId, level: "info",
+        message: `Fetched ${trends.length} trends${errors.length ? ` (${errors.length} subreddit errors)` : ""}` });
+      return { trends, count: trends.length, subreddits: subs };
+    }
+    case "content_planner":
+    case "title_generator":
+    case "hook_generator":
+    case "caption_generator":
+    case "hashtag_generator": {
+      const category = node.type;
+      const tpl = await resolveTemplate(sb, userId, category, cfg.template_slug as string | undefined);
+      const model = String(cfg.model ?? tpl.default_model);
+      const source = summariseUpstream(inputs);
+      const vars = {
+        input: inputs, ...inputs,
+        source,
+        count: cfg.count ?? tpl.variables?.count ?? 5,
+        niche: cfg.niche ?? tpl.variables?.niche ?? "",
+        platform: cfg.platform ?? tpl.variables?.platform ?? "youtube_shorts",
+        extra_instructions: cfg.extra_instructions ?? "",
+      } as Record<string, unknown>;
+      const userPrompt = interpolatePrompt(tpl.user_prompt, vars);
+      const systemPrompt = tpl.system_prompt ? interpolatePrompt(tpl.system_prompt, vars) : null;
+      await log(sb, { runId, nodeExecId, userId, level: "info",
+        message: `Calling ${model} via template "${tpl.slug}" (${category})` });
+      const raw = await callLovableChat(model, systemPrompt, userPrompt);
+
+      // Shape per category
+      if (category === "caption_generator") {
+        const caption = raw.trim().replace(/^["']|["']$/g, "");
+        await persistTextAsset(sb, {
+          userId, runId, nodeExecId, workflowId, nodeKey: node.node_key,
+          type: "script", name: `Caption ${node.node_key}`,
+          content: caption,
+          metadata: { kind: "caption", template: tpl.slug, model, platform: vars.platform },
+        });
+        return { caption, text: caption, template: tpl.slug, model };
+      }
+
+      const items = parseJsonArray(raw);
+      if (items.length === 0) throw new Error(`${category}: model returned no parseable items`);
+      const kindShort = category.replace("_generator", "").replace("content_", "");
+      await persistTextAsset(sb, {
+        userId, runId, nodeExecId, workflowId, nodeKey: node.node_key,
+        type: category === "content_planner" ? "plan" : "script",
+        name: `${tpl.name} (${items.length})`,
+        content: JSON.stringify(items, null, 2),
+        metadata: { kind: kindShort, template: tpl.slug, model, count: items.length },
+      });
+      await log(sb, { runId, nodeExecId, userId, level: "info",
+        message: `Generated ${items.length} ${kindShort} item(s)` });
+      // Friendly return shape per kind
+      if (category === "content_planner") return { plan: items, items, count: items.length, template: tpl.slug, model };
+      if (category === "title_generator") return { titles: items, items, text: (items[0] as string) ?? "", template: tpl.slug, model };
+      if (category === "hook_generator") return { hooks: items, items, text: (items[0] as string) ?? "", template: tpl.slug, model };
+      if (category === "hashtag_generator") {
+        const tags = (items as unknown[]).map((s) => String(s).trim()).filter(Boolean);
+        const text = tags.join(" ");
+        return { hashtags: tags, items: tags, text, template: tpl.slug, model };
+      }
+      return { items, template: tpl.slug, model };
     }
     default: {
       // Scaffold for unimplemented nodes — pass through, no fake output

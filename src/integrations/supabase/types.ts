@@ -301,6 +301,54 @@ export type Database = {
         }
         Relationships: []
       }
+      prompt_templates: {
+        Row: {
+          category: string
+          created_at: string
+          default_model: string
+          description: string | null
+          id: string
+          is_preset: boolean
+          name: string
+          slug: string
+          system_prompt: string | null
+          updated_at: string
+          user_id: string
+          user_prompt: string
+          variables: Json
+        }
+        Insert: {
+          category?: string
+          created_at?: string
+          default_model?: string
+          description?: string | null
+          id?: string
+          is_preset?: boolean
+          name: string
+          slug: string
+          system_prompt?: string | null
+          updated_at?: string
+          user_id: string
+          user_prompt: string
+          variables?: Json
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          default_model?: string
+          description?: string | null
+          id?: string
+          is_preset?: boolean
+          name?: string
+          slug?: string
+          system_prompt?: string | null
+          updated_at?: string
+          user_id?: string
+          user_prompt?: string
+          variables?: Json
+        }
+        Relationships: []
+      }
       user_integrations: {
         Row: {
           access_token: string | null
