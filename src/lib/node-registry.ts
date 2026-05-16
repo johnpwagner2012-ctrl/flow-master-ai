@@ -2,6 +2,7 @@ import {
   Webhook, Globe, GitBranch, Timer, Sparkles, Clock,
   Mic, Captions, Video, Youtube, Save, ImageIcon, Film,
   Wand2, Combine, Download, Layers, Layout, Image as ImageIcon2, FileVideo,
+  TrendingUp, ClipboardList, Type, Zap, MessageSquareText, Hash,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -25,7 +26,13 @@ export type NodeKind =
   | "timeline_builder"
   | "media_overlay"
   | "thumbnail_generator"
-  | "video_export";
+  | "video_export"
+  | "trend_fetcher"
+  | "content_planner"
+  | "title_generator"
+  | "hook_generator"
+  | "caption_generator"
+  | "hashtag_generator";
 
 export type NodeField =
   | { key: string; label: string; type: "text" | "textarea" | "number" | "url"; placeholder?: string; default?: string | number }
@@ -271,6 +278,107 @@ export const NODE_REGISTRY: Record<NodeKind, NodeDef> = {
         ], default: "bold_stroke" },
     ],
   },
+  trend_fetcher: {
+    kind: "trend_fetcher", label: "Trend Fetcher", category: "AI", icon: TrendingUp, hue: 305,
+    executor: "server", cronCompatible: true, provider: "reddit_json",
+    description: "Fetch trending posts from one or more subreddits (free, no API key). Persists results as a structured asset.",
+    fields: [
+      { key: "subreddits", label: "Subreddits (comma-separated)", type: "text", placeholder: "todayilearned,Damnthatsinteresting", default: "todayilearned" },
+      { key: "time", label: "Time window", type: "select",
+        options: [
+          { label: "Hour", value: "hour" }, { label: "Day", value: "day" },
+          { label: "Week", value: "week" }, { label: "Month", value: "month" },
+        ], default: "day" },
+      { key: "limit", label: "Top N per subreddit", type: "number", default: 10 },
+    ],
+  },
+  content_planner: {
+    kind: "content_planner", label: "Content Planner", category: "AI", icon: ClipboardList, hue: 305,
+    executor: "server", cronCompatible: true, provider: "lovable_ai",
+    description: "Turn raw trends/keywords into a structured short-form content plan (topic, angle, target audience, key beats).",
+    fields: [
+      { key: "template_slug", label: "Prompt template slug (optional)", type: "text", placeholder: "default" },
+      { key: "model", label: "Model", type: "select",
+        options: [
+          { label: "Gemini 2.5 Flash", value: "google/gemini-2.5-flash" },
+          { label: "Gemini 2.5 Pro", value: "google/gemini-2.5-pro" },
+          { label: "GPT-5 Mini", value: "openai/gpt-5-mini" },
+        ], default: "google/gemini-2.5-flash" },
+      { key: "count", label: "Plan items", type: "number", default: 5 },
+      { key: "niche", label: "Niche / brand voice", type: "text", placeholder: "Tech curiosities for Gen-Z" },
+      { key: "extra_instructions", label: "Extra instructions", type: "textarea", placeholder: "" },
+    ],
+  },
+  title_generator: {
+    kind: "title_generator", label: "Title Generator", category: "AI", icon: Type, hue: 305,
+    executor: "server", cronCompatible: true, provider: "lovable_ai",
+    description: "Generate scroll-stopping titles for short-form videos. Returns a list and persists as an asset.",
+    fields: [
+      { key: "template_slug", label: "Prompt template slug (optional)", type: "text", placeholder: "default" },
+      { key: "model", label: "Model", type: "select",
+        options: [
+          { label: "Gemini 2.5 Flash", value: "google/gemini-2.5-flash" },
+          { label: "Gemini 2.5 Pro", value: "google/gemini-2.5-pro" },
+        ], default: "google/gemini-2.5-flash" },
+      { key: "count", label: "How many titles", type: "number", default: 5 },
+      { key: "platform", label: "Platform", type: "select",
+        options: [
+          { label: "YouTube Shorts", value: "youtube_shorts" },
+          { label: "TikTok", value: "tiktok" },
+          { label: "Instagram Reels", value: "reels" },
+        ], default: "youtube_shorts" },
+      { key: "extra_instructions", label: "Extra instructions", type: "textarea", placeholder: "" },
+    ],
+  },
+  hook_generator: {
+    kind: "hook_generator", label: "Hook Generator", category: "AI", icon: Zap, hue: 305,
+    executor: "server", cronCompatible: true, provider: "lovable_ai",
+    description: "Generate 1–3 second opening hooks designed to stop the scroll. Persists list as an asset.",
+    fields: [
+      { key: "template_slug", label: "Prompt template slug (optional)", type: "text", placeholder: "default" },
+      { key: "model", label: "Model", type: "select",
+        options: [
+          { label: "Gemini 2.5 Flash", value: "google/gemini-2.5-flash" },
+          { label: "Gemini 2.5 Pro", value: "google/gemini-2.5-pro" },
+        ], default: "google/gemini-2.5-flash" },
+      { key: "count", label: "How many hooks", type: "number", default: 5 },
+      { key: "extra_instructions", label: "Extra instructions", type: "textarea", placeholder: "" },
+    ],
+  },
+  caption_generator: {
+    kind: "caption_generator", label: "Caption Generator", category: "AI", icon: MessageSquareText, hue: 305,
+    executor: "server", cronCompatible: true, provider: "lovable_ai",
+    description: "Generate platform-optimized post captions from upstream script/topic. Persists as an asset.",
+    fields: [
+      { key: "template_slug", label: "Prompt template slug (optional)", type: "text", placeholder: "default" },
+      { key: "model", label: "Model", type: "select",
+        options: [
+          { label: "Gemini 2.5 Flash", value: "google/gemini-2.5-flash" },
+          { label: "Gemini 2.5 Pro", value: "google/gemini-2.5-pro" },
+        ], default: "google/gemini-2.5-flash" },
+      { key: "platform", label: "Platform", type: "select",
+        options: [
+          { label: "YouTube Shorts", value: "youtube_shorts" },
+          { label: "TikTok", value: "tiktok" },
+          { label: "Instagram Reels", value: "reels" },
+        ], default: "youtube_shorts" },
+      { key: "extra_instructions", label: "Extra instructions", type: "textarea", placeholder: "" },
+    ],
+  },
+  hashtag_generator: {
+    kind: "hashtag_generator", label: "Hashtag Generator", category: "AI", icon: Hash, hue: 305,
+    executor: "server", cronCompatible: true, provider: "lovable_ai",
+    description: "Generate a relevant hashtag set for the upstream topic/caption. Persists as an asset.",
+    fields: [
+      { key: "template_slug", label: "Prompt template slug (optional)", type: "text", placeholder: "default" },
+      { key: "model", label: "Model", type: "select",
+        options: [
+          { label: "Gemini 2.5 Flash", value: "google/gemini-2.5-flash" },
+          { label: "Gemini 2.5 Flash Lite", value: "google/gemini-2.5-flash-lite" },
+        ], default: "google/gemini-2.5-flash" },
+      { key: "count", label: "How many hashtags", type: "number", default: 15 },
+    ],
+  },
 };
 
 export const NODE_LIST = Object.values(NODE_REGISTRY);
@@ -294,4 +402,6 @@ export const PROVIDERS: Record<string, ProviderInfo> = {
   shotstack: { id: "shotstack", label: "Shotstack API", free: false, requiresKey: "SHOTSTACK_API_KEY" },
   // YouTube
   youtube_oauth: { id: "youtube_oauth", label: "YouTube Data API (OAuth)", free: true },
+  // Trends
+  reddit_json: { id: "reddit_json", label: "Reddit JSON (free, no key)", free: true },
 };
