@@ -63,7 +63,7 @@ export async function upsertTemplate(input: {
   };
   const { data, error } = await supabase
     .from("prompt_templates")
-    .upsert(payload, { onConflict: "user_id,slug" })
+    .upsert(payload as never, { onConflict: "user_id,slug" })
     .select("*")
     .single();
   if (error) throw error;
