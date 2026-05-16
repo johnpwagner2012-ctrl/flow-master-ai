@@ -1,6 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import { NODE_REGISTRY, type NodeKind } from "./node-registry";
+import {
+  resolveTemplate, interpolatePrompt, parseJsonArray, summariseUpstream,
+} from "./prompt-templates";
 
 type SB = SupabaseClient<Database>;
 
@@ -82,6 +85,79 @@ async function callLovableAI(model: string, prompt: string): Promise<string> {
   const content = json.choices?.[0]?.message?.content ?? "";
   if (!content) throw new Error("AI returned empty response");
   return content;
+}
+
+async function callLovableChat(
+  model: string,
+  systemPrompt: string | null,
+  userPrompt: string,
+): Promise<string> {
+  const apiKey = process.env.LOVABLE_API_KEY;
+  if (!apiKey) throw new Error("LOVABLE_API_KEY is not configured");
+  const messages: { role: "system" | "user"; content: string }[] = [];
+  if (systemPrompt && systemPrompt.trim()) messages.push({ role: "system", content: systemPrompt });
+  messages.push({ role: "user", content: userPrompt });
+  const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ model: model || "google/gemini-2.5-flash", messages }),
+  });
+  if (res.status === 429) throw new Error("AI rate limit exceeded. Please retry shortly.");
+  if (res.status === 402) throw new Error("AI credits exhausted. Add credits in Settings → Workspace → Usage.");
+  if (!res.ok) throw new Error(`AI gateway error ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  const json = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+  const content = json.choices?.[0]?.message?.content ?? "";
+  if (!content) throw new Error("AI returned empty response");
+  return content;
+}
+
+type TrendItem = {
+  title: string; url: string; subreddit: string; score: number;
+  num_comments: number; permalink: string; created_utc: number;
+};
+
+async function fetchSubredditTop(subreddit: string, time: string, limit: number): Promise<TrendItem[]> {
+  const t = ["hour", "day", "week", "month", "year", "all"].includes(time) ? time : "day";
+  const n = Math.max(1, Math.min(50, limit));
+  const url = `https://www.reddit.com/r/${encodeURIComponent(subreddit)}/top.json?t=${t}&limit=${n}`;
+  const res = await fetch(url, { headers: { "User-Agent": "flowforge-trend-fetcher/1.0" } });
+  if (!res.ok) throw new Error(`Reddit ${subreddit} HTTP ${res.status}`);
+  const json = (await res.json()) as { data?: { children?: Array<{ data: Record<string, unknown> }> } };
+  const items = json.data?.children ?? [];
+  return items.map((c) => {
+    const d = c.data;
+    return {
+      title: String(d.title ?? ""),
+      url: String(d.url ?? ""),
+      subreddit: String(d.subreddit ?? subreddit),
+      score: Number(d.score ?? 0),
+      num_comments: Number(d.num_comments ?? 0),
+      permalink: d.permalink ? `https://www.reddit.com${String(d.permalink)}` : "",
+      created_utc: Number(d.created_utc ?? 0),
+    };
+  });
+}
+
+async function persistTextAsset(
+  sb: SB, params: {
+    userId: string; runId: string; nodeExecId: string; workflowId: string;
+    nodeKey: string; type: string; name: string; content: string;
+    metadata?: Record<string, unknown>;
+  },
+) {
+  const path = `${params.runId}/${params.nodeKey}-${Date.now()}.json`;
+  const base64 = btoa(unescape(encodeURIComponent(params.content)));
+  const up = await uploadBase64(sb, params.userId, "scripts", path, base64, "application/json");
+  const url = await signedUrl(sb, "scripts", up.path);
+  const { data: asset } = await sb.from("assets").insert({
+    user_id: params.userId, workflow_run_id: params.runId, node_execution_id: params.nodeExecId,
+    workflow_id: params.workflowId, node_key: params.nodeKey,
+    type: params.type, name: params.name,
+    content: params.content, file_url: url, mime_type: "application/json",
+    size_bytes: up.size, storage_bucket: "scripts", storage_path: up.path,
+    metadata: (params.metadata ?? {}) as never,
+  }).select("id").single();
+  return { asset_id: asset?.id, url, storage_path: up.path };
 }
 
 async function callLovableImage(model: string, prompt: string): Promise<{ base64: string; mime: string }> {
