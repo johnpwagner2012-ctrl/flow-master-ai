@@ -594,6 +594,93 @@ async function executeNode(
       await log(sb, { runId, nodeExecId, userId, level: "info", message: `Saved ${assetType} asset ${assetRow.id}` });
       return { asset_id: assetRow.id, type: assetType, content, file_url: fileUrl };
     }
+    case "trend_fetcher": {
+      const subs = String(cfg.subreddits ?? "todayilearned")
+        .split(",").map((s) => s.trim().replace(/^r\//, "")).filter(Boolean);
+      if (subs.length === 0) throw new Error("Trend Fetcher: no subreddits configured");
+      const time = String(cfg.time ?? "day");
+      const limit = Number(cfg.limit ?? 10);
+      await log(sb, { runId, nodeExecId, userId, level: "info",
+        message: `Fetching r/${subs.join(", r/")} top/${time} limit=${limit}` });
+      const results = await Promise.allSettled(subs.map((s) => fetchSubredditTop(s, time, limit)));
+      const trends: TrendItem[] = [];
+      const errors: string[] = [];
+      results.forEach((r, i) => {
+        if (r.status === "fulfilled") trends.push(...r.value);
+        else errors.push(`${subs[i]}: ${r.reason instanceof Error ? r.reason.message : String(r.reason)}`);
+      });
+      if (trends.length === 0) {
+        throw new Error(`Trend Fetcher: no results (${errors.join("; ") || "empty"})`);
+      }
+      trends.sort((a, b) => b.score - a.score);
+      await persistTextAsset(sb, {
+        userId, runId, nodeExecId, workflowId, nodeKey: node.node_key,
+        type: "trends", name: `Trends ${subs.join(",")}`,
+        content: JSON.stringify(trends, null, 2),
+        metadata: { subreddits: subs, time, limit, count: trends.length, errors },
+      });
+      await log(sb, { runId, nodeExecId, userId, level: "info",
+        message: `Fetched ${trends.length} trends${errors.length ? ` (${errors.length} subreddit errors)` : ""}` });
+      return { trends, count: trends.length, subreddits: subs };
+    }
+    case "content_planner":
+    case "title_generator":
+    case "hook_generator":
+    case "caption_generator":
+    case "hashtag_generator": {
+      const category = node.type;
+      const tpl = await resolveTemplate(sb, userId, category, cfg.template_slug as string | undefined);
+      const model = String(cfg.model ?? tpl.default_model);
+      const source = summariseUpstream(inputs);
+      const vars = {
+        input: inputs, ...inputs,
+        source,
+        count: cfg.count ?? tpl.variables?.count ?? 5,
+        niche: cfg.niche ?? tpl.variables?.niche ?? "",
+        platform: cfg.platform ?? tpl.variables?.platform ?? "youtube_shorts",
+        extra_instructions: cfg.extra_instructions ?? "",
+      } as Record<string, unknown>;
+      const userPrompt = interpolatePrompt(tpl.user_prompt, vars);
+      const systemPrompt = tpl.system_prompt ? interpolatePrompt(tpl.system_prompt, vars) : null;
+      await log(sb, { runId, nodeExecId, userId, level: "info",
+        message: `Calling ${model} via template "${tpl.slug}" (${category})` });
+      const raw = await callLovableChat(model, systemPrompt, userPrompt);
+
+      // Shape per category
+      if (category === "caption_generator") {
+        const caption = raw.trim().replace(/^["']|["']$/g, "");
+        await persistTextAsset(sb, {
+          userId, runId, nodeExecId, workflowId, nodeKey: node.node_key,
+          type: "script", name: `Caption ${node.node_key}`,
+          content: caption,
+          metadata: { kind: "caption", template: tpl.slug, model, platform: vars.platform },
+        });
+        return { caption, text: caption, template: tpl.slug, model };
+      }
+
+      const items = parseJsonArray(raw);
+      if (items.length === 0) throw new Error(`${category}: model returned no parseable items`);
+      const kindShort = category.replace("_generator", "").replace("content_", "");
+      await persistTextAsset(sb, {
+        userId, runId, nodeExecId, workflowId, nodeKey: node.node_key,
+        type: category === "content_planner" ? "plan" : "script",
+        name: `${tpl.name} (${items.length})`,
+        content: JSON.stringify(items, null, 2),
+        metadata: { kind: kindShort, template: tpl.slug, model, count: items.length },
+      });
+      await log(sb, { runId, nodeExecId, userId, level: "info",
+        message: `Generated ${items.length} ${kindShort} item(s)` });
+      // Friendly return shape per kind
+      if (category === "content_planner") return { plan: items, items, count: items.length, template: tpl.slug, model };
+      if (category === "title_generator") return { titles: items, items, text: (items[0] as string) ?? "", template: tpl.slug, model };
+      if (category === "hook_generator") return { hooks: items, items, text: (items[0] as string) ?? "", template: tpl.slug, model };
+      if (category === "hashtag_generator") {
+        const tags = (items as unknown[]).map((s) => String(s).trim()).filter(Boolean);
+        const text = tags.join(" ");
+        return { hashtags: tags, items: tags, text, template: tpl.slug, model };
+      }
+      return { items, template: tpl.slug, model };
+    }
     default: {
       // Scaffold for unimplemented nodes — pass through, no fake output
       await log(sb, {
